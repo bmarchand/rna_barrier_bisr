@@ -1,4 +1,5 @@
-from .barriers_py3 import ssrandom, ssparse, sstopairs, ssstring, realize
+from .random_rna_structures import ssrandom, ssparse, sstopairs, ssstring
+from .divider_schedule import realize
 from .graph_classes import Digraph, BipartiteGraph
 
 import random

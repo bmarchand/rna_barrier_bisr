@@ -3,6 +3,14 @@ import sys
 import os
 import getopt
 import time
+from .random_rna_structures import sstopairs, ssparse, compatiblepairs, pairstoss
+
+DEBUG=False
+SMALLDEBUG = True
+LEAVEINCLUDES = True
+LEAVEBLACKLIST = True
+RUNBRUTEFORCE = False
+TIME = False
 
 def boolTuples(dim):
     if dim <= 0:
@@ -42,86 +50,87 @@ def I(Sep, B, R):
     bpsR = sstopairs(R)
     return (bpsB-Sep, bpsR & Sep)
 
+def MCF(B, R, theta=1):
+    # Returns max #pairs, and matching structure in well-parenthesized
+    # notation, composed of compatible pairs in B + R (=E)
+    # restricted to interval [i,j], and further constrained to
+    # featuring >0 pair for B (iff alpha=True) or R (iff beta=True)
+    # mat is just a caching dictionary for memoization
+    # Note: It takes strength and discipline to be *this* lazy...
+    mat = {}
+    n = len(B)
+    # Init for intervals smaller than THETA nucleotides
+    for m in range(1, theta+1):
+        for alpha, beta in boolTuples(2):
+            for i in range(0, n-m+1):
+                j = i+m-1
+                if (alpha, beta) == (False, False):
+                    # If interval too small, and no need to include
+                    # pairs from either B or R (alpha,beta == False, False)
+                    # Then the best structure has 0 pairs
+                    mat[(i, j, alpha, beta)] = (0, "."*m)
+                else:
+                    # If interval too small, but we still need to include
+                    # some pair from B or R (alpha,beta != False, False)
+                    # Then there is no allowed structure (-infty pairs)
+                    mat[(i, j, alpha, beta)] = (-sys.maxsize, "X"*m)
+    for m in range(theta+1, n+1):
+        for alpha, beta in boolTuples(2):
+            for i in range(0, n-m+1):
+                j = i+m-1
+
+                # Case 1: First position unpaired, max #pairs is found by
+                # recurrence on [i+1,j], forwarding the need to feature pair
+                # from B (iff alpha=True) or R (iff beta=True)
+                (k, ss) = mat[(i+1, j, alpha, beta)]
+                mat[(i, j, alpha, beta)] = (k, "."+ss)
+
+                # Case 2: First position paired, max #pairs is found by
+                # recurrence on [i+1,j], forwarding the need to feature pair
+                # from B (iff alpha=True) or R (iff beta=True)
+
+                # Check if pairs from B and R at pos i can be considered
+                # for the paired case (ie must be fully contained in [i,j])
+                partners = []
+                if B[i] > i and B[i] <= j:
+                    partners.append((i, B[i]))
+                if R[i] > i and R[i] <= j:
+                    partners.append((i, R[i]))
+                # Go over suitable partners for pos. i (within R or B)
+                for (a, k) in partners:
+                    assert(a == i)
+                    # Consider all possible ways of "forwarding" constraints
+                    # (having >0 pair from B, ie alpha=True, or R, ie beta=True),
+                    # to subintervals [i+1,k-1] (alpha1,beta1) and [k+1,j] (alpha2,beta2).
+                    for (alpha1, beta1, alpha2, beta2) in boolTuples(4):
+                        # If alpha=True, check that "someone" satisfies constraint
+                        # of having >0 pair from B (ie either through pair (a,k),
+                        # recursion over [i+1,k-1], or rec. over [k+1,k])
+                        if not alpha or (alpha1 or alpha2 or B[i] == k):
+                            # Same for R w.r.t. beta1 and beta2
+                            if not beta or (beta1 or beta2 or R[i] == k):
+                                # Recurse over subintervals with suitable constraints
+                                if i+1 <= k-1:
+                                    (termA, ssA) = mat[(
+                                        i+1, k-1, alpha1, beta1)]
+                                elif not alpha1 and not beta1:
+                                    (termA, ssA) = (0, "")
+                                else:
+                                    (termA, ssA) = (-sys.maxsize, "X")
+                                if k < j:
+                                    (termB, ssB) = mat[(
+                                        k+1, j, alpha2, beta2)]
+                                elif not alpha2 and not beta2:
+                                    (termB, ssB) = (0, "")
+                                else:
+                                    (termB, ssB) = (-sys.maxsize, "X")
+                                # Accumulate max #pairs, plus one for current pair (a,k)
+                                mat[(i, j, alpha, beta)] = max(
+                                    mat[(i, j, alpha, beta)], (1+termA+termB, "("+ssA+")"+ssB))
+    return mat[(0, n-1, True, True)]
+
 
 def separate(B, R, theta=1):
-    def MCF(B, R, theta=1):
-        # Returns max #pairs, and matching structure in well-parenthesized
-        # notation, composed of compatible pairs in B + R (=E)
-        # restricted to interval [i,j], and further constrained to
-        # featuring >0 pair for B (iff alpha=True) or R (iff beta=True)
-        # mat is just a caching dictionary for memoization
-        # Note: It takes strength and discipline to be *this* lazy...
-        mat = {}
-        n = len(B)
-        # Init for intervals smaller than THETA nucleotides
-        for m in range(1, theta+1):
-            for alpha, beta in boolTuples(2):
-                for i in range(0, n-m+1):
-                    j = i+m-1
-                    if (alpha, beta) == (False, False):
-                        # If interval too small, and no need to include
-                        # pairs from either B or R (alpha,beta == False, False)
-                        # Then the best structure has 0 pairs
-                        mat[(i, j, alpha, beta)] = (0, "."*m)
-                    else:
-                        # If interval too small, but we still need to include
-                        # some pair from B or R (alpha,beta != False, False)
-                        # Then there is no allowed structure (-infty pairs)
-                        mat[(i, j, alpha, beta)] = (-sys.maxsize, "X"*m)
-        for m in range(theta+1, n+1):
-            for alpha, beta in boolTuples(2):
-                for i in range(0, n-m+1):
-                    j = i+m-1
-
-                    # Case 1: First position unpaired, max #pairs is found by
-                    # recurrence on [i+1,j], forwarding the need to feature pair
-                    # from B (iff alpha=True) or R (iff beta=True)
-                    (k, ss) = mat[(i+1, j, alpha, beta)]
-                    mat[(i, j, alpha, beta)] = (k, "."+ss)
-
-                    # Case 2: First position paired, max #pairs is found by
-                    # recurrence on [i+1,j], forwarding the need to feature pair
-                    # from B (iff alpha=True) or R (iff beta=True)
-
-                    # Check if pairs from B and R at pos i can be considered
-                    # for the paired case (ie must be fully contained in [i,j])
-                    partners = []
-                    if B[i] > i and B[i] <= j:
-                        partners.append((i, B[i]))
-                    if R[i] > i and R[i] <= j:
-                        partners.append((i, R[i]))
-                    # Go over suitable partners for pos. i (within R or B)
-                    for (a, k) in partners:
-                        assert(a == i)
-                        # Consider all possible ways of "forwarding" constraints
-                        # (having >0 pair from B, ie alpha=True, or R, ie beta=True),
-                        # to subintervals [i+1,k-1] (alpha1,beta1) and [k+1,j] (alpha2,beta2).
-                        for (alpha1, beta1, alpha2, beta2) in boolTuples(4):
-                            # If alpha=True, check that "someone" satisfies constraint
-                            # of having >0 pair from B (ie either through pair (a,k),
-                            # recursion over [i+1,k-1], or rec. over [k+1,k])
-                            if not alpha or (alpha1 or alpha2 or B[i] == k):
-                                # Same for R w.r.t. beta1 and beta2
-                                if not beta or (beta1 or beta2 or R[i] == k):
-                                    # Recurse over subintervals with suitable constraints
-                                    if i+1 <= k-1:
-                                        (termA, ssA) = mat[(
-                                            i+1, k-1, alpha1, beta1)]
-                                    elif not alpha1 and not beta1:
-                                        (termA, ssA) = (0, "")
-                                    else:
-                                        (termA, ssA) = (-sys.maxsize, "X")
-                                    if k < j:
-                                        (termB, ssB) = mat[(
-                                            k+1, j, alpha2, beta2)]
-                                    elif not alpha2 and not beta2:
-                                        (termB, ssB) = (0, "")
-                                    else:
-                                        (termB, ssB) = (-sys.maxsize, "X")
-                                    # Accumulate max #pairs, plus one for current pair (a,k)
-                                    mat[(i, j, alpha, beta)] = max(
-                                        mat[(i, j, alpha, beta)], (1+termA+termB, "("+ssA+")"+ssB))
-        return mat[(0, n-1, True, True)]
     assert(len(B) == len(R))
     # Call to rec. function, considering full interval [i,j] = [0,n-1],
     # and forcing >0 pair from both B and R with (alpha,beta) = (True,True)
@@ -201,13 +210,11 @@ def list_deps(bpR, bpsB):
 def realize(B, R, k, depth=0, firstRblacklist=set([]), lastBblacklist=set([]), theta=1):
     def indent(depth):
         return "  "*depth
-    global maxk
+
     if DEBUG:
         print(indent(depth)+"realize (k=%s):" % k)
         print(indent(depth+1)+"B=%s" % (ssstring(B)))
         print(indent(depth+1)+"R=%s" % (ssstring(R)))
-    if k > maxk:
-        maxk = k
 
     n = len(B)
     assert(n == len(R))
@@ -313,7 +320,7 @@ def realize(B, R, k, depth=0, firstRblacklist=set([]), lastBblacklist=set([]), t
                 print(indent(depth+1) +
                       "Try (%s,%s) in R -> Remove %s from B" % (i, j, deps))
             if len(deps) <= k:
-                print(indent(depth+1)+"nextBL = %s " % nextBlackList)
+                #print(indent(depth+1)+"nextBL = %s " % nextBlackList)
                 recres = realize(pairstoss(bpsnB, n), pairstoss(
                     bpsnR, n), k+1-len(deps), depth+2, nextBlackList, lastBblacklist, theta=theta)
                 if recres is not None:

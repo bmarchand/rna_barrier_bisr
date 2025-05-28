@@ -1,7 +1,7 @@
 from .graph_classes import Digraph
 from .dpw_algorithm import DPW
 from .maximum_matching import maximum_matching
-from .barriers_py3 import ssparse, sstopairs
+from .random_rna_structures import ssparse, sstopairs
 from .rna_interface import structures_to_conflict_graph
 import networkx as nx
 
