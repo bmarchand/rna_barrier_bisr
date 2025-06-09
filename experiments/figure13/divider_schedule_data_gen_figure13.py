@@ -42,7 +42,7 @@ for line in open(fname).readlines()[1:]:
     rho_dict[index] = k+alpha-sizeL
 
 import json
-with open('run_time_data_dpw.json','w') as f:
+with open('run_time_data_divide.json','w') as f:
     json.dump(run_time_dict,f)
 
 with open('rho_data.json','w') as f:
