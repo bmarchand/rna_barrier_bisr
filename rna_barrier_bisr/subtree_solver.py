@@ -1,5 +1,5 @@
 from .utilities import num_leaves, list_bps
-
+from .random_rna_structures import pairstoss
 debug = True
 
 def solve_subtree(s1, s2):
@@ -18,7 +18,7 @@ def solve_subtree(s1, s2):
     global N
     N = len(s1)
     assert(len(s1)==len(s2))
-
+    #print("leaves", num_leaves(s1),num_leaves(s2))
     if num_leaves(s2) < num_leaves(s1):
         k, schedule = DP_solver(l2, l1)
         return k-len(l2)+len(l1), schedule[::-1], num_leaves(s2)
@@ -138,7 +138,7 @@ def detect_sus(schedule, bps1, bps2):
             continue
         # else do I stop now or look at base pair ?
         if cost < 0 and k > 0:
-            return schedule[:k], worst
+            return schedule[:(k + 1)], worst
         if bp in bps1:
             cost += 1
         if cost > worst:
@@ -184,7 +184,7 @@ def merge(schedule_in, schedule_out, bps1_in, bps2_in, bps1_out, bps2_out):
 
     # putting it first
     if sus_in or sus_out:
-        if worst_out < worst_in:
+        if worst_out < worst_in: #and sus_out:
             schedule_in, schedule_out = schedule_out, schedule_in
             bps1_in, bps1_out = bps1_out, bps1_in
             bps2_in, bps2_out = bps2_out, bps2_in
@@ -207,11 +207,11 @@ def merge(schedule_in, schedule_out, bps1_in, bps2_in, bps1_out, bps2_out):
 
     # putting it first
     if rsus_in or rsus_out:
-        if worst_out < worst_in:
+        if worst_out < worst_in: #and rsus_out:
             schedule_in, schedule_out = schedule_out, schedule_in
             bps1_in, bps1_out = bps1_out, bps1_in
             bps2_in, bps2_out = bps2_out, bps2_in
-            rsus_in, sus_out = rsus_out, sus_in
+            rsus_in, rsus_out = rsus_out, rsus_in
             
         rsus_in.reverse()
         bps1_in = filter_bps(bps1_in, rsus_in)
@@ -249,7 +249,7 @@ def budget_vector(schedule, bps1, bps2):
             cost += 1
         if bp in bps2:
             cost -= 1
-        if cost <= 0 and not pref[cost] < float('inf'):
+        if cost < 0 and not pref[cost] < float('inf'):
             pref[cost] = worst
         if cost > worst:
             worst = cost
@@ -263,12 +263,12 @@ def budget_vector(schedule, bps1, bps2):
             cost += 1
         if bp in bps1:
             cost -= 1
-        if cost <= 0 and not suff[cost] < float('inf'):
+        if cost < 0 and not suff[cost] < float('inf'):
             suff[cost] = worst_rev
         if cost > worst_rev:
             worst_rev = cost
 
-    return [worst] + [val for _, val in pref.items()] + [val for _, val in suff.items()]
+    return [worst]+[val for _, val in pref.items()] + [val for _, val in suff.items()]
 
 def preferable(schedule1, schedule2, bps1, bps2):
     """
@@ -286,18 +286,21 @@ def preferable(schedule1, schedule2, bps1, bps2):
             return False
 
     return True
+#from divider_schedule import realize
 
 def DP_solver(bps1, bps2, depth=0):
-
+    #ss1, ss2 = pairstoss(bps1), pairstoss(bps2)
     # checking if already computed
     if key(bps1, bps2) in M:
         return M[key(bps1,bps2)]
-        
+
+    # dummy schedule to start:
+    M[key(bps1,bps2)] = len(bps1), bps1+bps2
+    
     # adjacency dictionary computation: (possible optim: do once outside and subsample)
     N = neighbor_dict(bps1, bps2)
     
     ### TERMINAL CASES ###
-
     # no-dependency final element
     for bp2 in bps2:
         if len(N[bp2])==0:
@@ -330,14 +333,19 @@ def DP_solver(bps1, bps2, depth=0):
             return M[key(bps1,bps2)]
 
     ### GENERAL CASE ###
-    # dummy schedule to start:
-    M[key(bps1,bps2)] = len(bps1), bps1+bps2
 
+    #if not key(bps2,bps1) in M.keys():
+    #    M[key(bps2,bps1)] = len(bps2), bps1+bps2
+    #print("blub", bps1[::-1])
+    #print("blub2", bps1)
     for bp1 in bps1[::-1]:
+        
         # is bp1 the last ?
         bps1_in, bps1_out = split(bps1, bp1)
         bps2_in, bps2_out = split(bps2, bp1)
-
+        #print(bp1)
+        #if bp1 == (11, 20):
+        #    print("I am 11-20", "\n")
         _, schedule_in = DP_solver(bps1_in, bps2_in, depth=depth+1)
         _, schedule_out = DP_solver(bps1_out, bps2_out, depth=depth+1)
         assert(len(schedule_in)==len(bps1_in)+len(bps2_in))
@@ -347,7 +355,7 @@ def DP_solver(bps1, bps2, depth=0):
         schedule = schedule + [bp1] + N[bp1]
         if debug:
             assert(len(bps1)+len(bps2)==len(schedule))
-        if preferable(schedule, M[key(bps1, bps2)][1], bps1, bps2):
+        if preferable(schedule, M[key(bps1, bps2)][1], bps1, bps2):# and preferable(schedule[::-1], M[key(bps1, bps2)][1][::-1], bps2, bps1):
             M[key(bps1, bps2)] = barrier(schedule, bps1, bps2), schedule
 
     return M[key(bps1, bps2)]

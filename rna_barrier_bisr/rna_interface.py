@@ -10,7 +10,7 @@ def solve_mcf(s1, s2, theta=1):
 
     k = 0
 
-    print("ss1,ss2", ss1, ss2)
+    #print("ss1,ss2", ss1, ss2)
 
     while k < len(s1):
 
